@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notepad</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --sidebar-bg: #1a1a1a;
+            --text-main: #ffffff;
+            --text-muted: #888888;
+            --accent: #333333;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        /* Content Editable Placeholder */
+        [contenteditable]:empty:before {
+            content: attr(data-placeholder);
+            color: var(--text-muted);
+            cursor: text;
+        }
+
+        /* Selection Toolbar */
+        #toolbar {
+            display: none;
+            position: absolute;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            z-index: 100;
+            flex-direction: row;
+            gap: 4px;
+        }
+
+        #toolbar button {
+            background: transparent;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+
+        #toolbar button:hover {
+            background: #444;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 10px;
+        }
+
+        /* Editor styles */
+        .note-section { margin-bottom: 100px; }
+        .editor-container h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; outline: none; letter-spacing: -0.02em; }
+        .editor-container h2 { font-size: 1.25rem; font-weight: 400; color: #666; margin-bottom: 2.5rem; outline: none; line-height: 1.4; }
+        .editor-body { font-size: 1.1rem; line-height: 1.7; outline: none; min-height: 300px; color: #ececec; }
+        .editor-body h3 { font-size: 1.4rem; font-weight: 600; margin-top: 2rem; margin-bottom: 0.5rem; color: #fff; }
+        .editor-body p { margin-bottom: 1rem; }
+        
+        .sidebar-item {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            color: #777;
+            cursor: pointer;
+            border-radius: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: all 0.15s ease;
+        }
+        .sidebar-item:hover {
+            background: #222;
+            color: #fff;
+        }
+        .sidebar-item.active {
+            background: #2a2a2a;
+            color: #fff;
+        }
+        .sidebar-item.h1 { font-weight: 600; color: #aaa; margin-bottom: 4px; }
+        .sidebar-item.h3 { padding-left: 24px; font-size: 0.75rem; color: #555; }
+
+        #add-section-btn {
+            margin-top: 10px;
+            padding: 4px;
+            width: 36px;
+            height: 24px;
+            border: 1px dashed #333;
+            border-radius: 4px;
+            color: #555;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            align-self: center;
+        }
+        #add-section-btn:hover {
+            border-color: #666;
+            color: #aaa;
+            background: #1a1a1a;
+        }
+
+        .action-menu {
+            position: fixed;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            display: none;
+            flex-direction: column;
+            padding: 4px;
+            z-index: 200;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .action-menu button {
+            padding: 8px 16px;
+            text-align: left;
+            color: #ccc;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            border-radius: 4px;
+        }
+        .action-menu button:hover {
+            background: #333;
+            color: white;
+        }
+        .sidebar-item:hover {
+            background: #252525;
+            color: var(--text-main);
+        }
+        .sidebar-item.h3 { padding-left: 24px; }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <!-- Sidebar (Table of Contents) -->
+    <aside class="w-52 border-r border-zinc-800 bg-[#161616] p-4 flex flex-col justify-between overflow-y-auto hidden md:flex">
+        <div class="p-4 flex flex-col gap-2">
+            <div id="toc-container" class="space-y-1"></div>
+            <button id="add-section-btn" onclick="showAddMenu(event)">+</button>
+        </div>
+        
+        <div class="p-4 border-t border-zinc-900">
+            <button onclick="clearAllData()" class="text-[10px] text-zinc-600 hover:text-red-400 transition-colors uppercase tracking-widest w-full text-left px-2">Clear All</button>
+        </div>
+    </aside>
+
+    <!-- Main Editor -->
+    <main class="flex-1 overflow-y-auto px-8 py-16 md:px-24 lg:px-40" id="editor-main">
+        <div id="sections-wrapper" class="max-w-3xl mx-auto editor-container">
+            <!-- Sections will be rendered here -->
+        </div>
+    </main>
+
+    <!-- Floating Toolbar -->
+    <div id="toolbar" onmousedown="event.preventDefault()">
+        <button onclick="format('bold')" title="Bold"><b>B</b></button>
+        <button onclick="format('italic')" title="Italic"><i>I</i></button>
+        <button onclick="format('underline')" title="Underline"><u>U</u></button>
+        <button onclick="format('strikethrough')" title="Strikethrough"><s>S</s></button>
+        <div class="w-[1px] h-4 bg-zinc-700 mx-1"></div>
+        <button onclick="toggleHeading('h1')" title="Heading 1">H1</button>
+        <button onclick="toggleHeading('h2')" title="Heading 2">H2</button>
+        <button onclick="toggleHeading('h3')" title="Heading 3">H3</button>
+        <div class="w-[1px] h-4 bg-zinc-700 mx-1"></div>
+        <button onclick="format('insertUnorderedList')" title="Bulleted List">•</button>
+        <button onclick="format('insertOrderedList')" title="Numbered List">1.</button>
+        <button onclick="format('indent')" title="Indent">⇥</button>
+        <button onclick="format('outdent')" title="Outdent">⇤</button>
+        <button onclick="insertChecklist()" title="Checklist">☑</button>
+    </div>
+
+    <!-- Action Menu -->
+    <div id="action-menu" class="action-menu">
+        <button onclick="addNewSection('top')">Add to Top</button>
+        <button onclick="addNewSection('bottom')">Add to Bottom</button>
+    </div>
+
+    <style>
+        /* Placeholder fix - more robust approach */
+        [contenteditable]:empty:before {
+            content: attr(data-placeholder);
+            color: #444;
+            pointer-events: none;
+            display: block;
+        }
+        /* Handle cases where browser leaves a <br> or empty text node */
+        [contenteditable].empty:before {
+            content: attr(data-placeholder);
+            color: #444;
+            pointer-events: none;
+            display: block;
+            position: absolute;
+        }
+
+        /* Checklist styles */
+        .checklist-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; position: relative; }
+        .checklist-item input[type="checkbox"] { 
+            margin-top: 6px; 
+            cursor: pointer; 
+            accent-color: #ffffff; 
+            width: 16px; 
+            height: 16px; 
+            filter: invert(1) hue-rotate(180deg);
+        }
+        .checklist-item.checked span { text-decoration: line-through; color: #555; }
+        
+        #toolbar { gap: 2px; padding: 4px 8px; align-items: center; border-color: #333; }
+        #toolbar button { font-weight: 500; min-width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
+
+        /* Fix Title/Subtitle pointer issues */
+        .section-title, .section-subtitle { cursor: text; position: relative; }
+
+        /* Trash Icon Logic */
+        .note-section { position: relative; }
+        .trash-btn {
+            position: absolute;
+            left: -40px;
+            top: 10px;
+            color: #444;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .note-section:hover .trash-btn {
+            opacity: 1;
+        }
+        .trash-btn:hover {
+            color: #ff4444;
+        }
+
+        /* List visibility fixes */
+        .editor-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .editor-body ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .editor-body li { margin-bottom: 0.25rem; }
+    </style>
+
+    <script>
+        const sectionsWrapper = document.getElementById('sections-wrapper');
+        const tocContainer = document.getElementById('toc-container');
+        const toolbar = document.getElementById('toolbar');
+        const actionMenu = document.getElementById('action-menu');
+
+        let sections = [];
+
+        // Initialize from LocalStorage
+        window.addEventListener('DOMContentLoaded', () => {
+            const stored = localStorage.getItem('noted-sections');
+            if (stored) {
+                sections = JSON.parse(stored);
+            } else {
+                sections = [{ id: Date.now(), title: '', subtitle: '', body: '' }];
+            }
+            renderSections();
+            updateTOC();
+        });
+
+        function renderSections() {
+            sectionsWrapper.innerHTML = '';
+            sections.forEach((s, idx) => {
+                const sectionDiv = document.createElement('div');
+                sectionDiv.className = 'note-section';
+                sectionDiv.id = `section-${s.id}`;
+                
+                // Trash button
+                const trashBtn = document.createElement('div');
+                trashBtn.className = 'trash-btn';
+                trashBtn.innerHTML = '✕'; // Simple X as trash icon for minimalist look
+                trashBtn.title = 'Delete this part';
+                trashBtn.onclick = () => deleteSection(s.id);
+                sectionDiv.appendChild(trashBtn);
+                
+                const titleHtml = `<h1 contenteditable="true" data-placeholder="Title" class="section-title">${s.title}</h1>`;
+                const subtitleHtml = `<h2 contenteditable="true" data-placeholder="Subtitle" class="section-subtitle">${s.subtitle}</h2>`;
+                const bodyHtml = `<div contenteditable="true" data-placeholder="Type something..." class="editor-body section-body">${s.body}</div>`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.innerHTML = titleHtml + subtitleHtml + bodyHtml;
+                sectionDiv.appendChild(contentDiv);
+
+                const titleEl = sectionDiv.querySelector('.section-title');
+                const subEl = sectionDiv.querySelector('.section-subtitle');
+                const bodyEl = sectionDiv.querySelector('.section-body');
+
+                // Check placeholders on init
+                [titleEl, subEl, bodyEl].forEach(checkPlaceholder);
+
+                [titleEl, subEl, bodyEl].forEach(el => {
+                    el.addEventListener('input', () => {
+                        checkPlaceholder(el);
+                        sections[idx].title = titleEl.innerText;
+                        sections[idx].subtitle = subEl.innerText;
+                        sections[idx].body = bodyEl.innerHTML;
+                        save();
+                    });
+                    el.addEventListener('mousedown', (e) => {
+                        if (document.activeElement !== el) {
+                            setTimeout(() => el.focus(), 0);
+                        }
+                    });
+                });
+
+                // Keydown logic for checklist and formatting
+                bodyEl.addEventListener('keydown', (e) => {
+                    const selection = window.getSelection();
+                    if (!selection.rangeCount) return;
+
+                    const node = selection.anchorNode;
+                    const span = node.nodeType === 3 ? node.parentElement.closest('.checklist-item span') : node.closest('.checklist-item span');
+
+                    if (e.key === 'Enter') {
+                        if (span) {
+                            e.preventDefault();
+                            const item = span.closest('.checklist-item');
+                            const newId = 'check-' + Date.now();
+                            const newItem = document.createElement('div');
+                            newItem.className = 'checklist-item';
+                            newItem.setAttribute('contenteditable', 'false');
+                            newItem.innerHTML = `
+                                <input type="checkbox" onchange="this.parentElement.classList.toggle('checked', this.checked)"> 
+                                <span contenteditable="true" style="outline:none; flex:1;" id="${newId}"></span>
+                            `;
+                            
+                            item.parentNode.insertBefore(newItem, item.nextSibling);
+                            const newSpan = document.getElementById(newId);
+                            newSpan.focus();
+                            save();
+                        }
+                    } else if (e.key === 'Backspace') {
+                        if (span && (selection.anchorOffset === 0 || span.innerText.trim() === '')) {
+                            const item = span.closest('.checklist-item');
+                            const text = span.innerHTML;
+                            if (text === '' || text === '<br>') {
+                                e.preventDefault();
+                                const p = document.createElement('p');
+                                p.innerHTML = '<br>';
+                                item.parentNode.replaceChild(p, item);
+                                const range = document.createRange();
+                                range.setStart(p, 0);
+                                range.collapse(true);
+                                selection.removeAllRanges();
+                                selection.addRange(range);
+                                p.focus();
+                                save();
+                            }
+                        }
+                    }
+                });
+
+                titleEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); subEl.focus(); }
+                });
+                subEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); bodyEl.focus(); }
+                });
+
+                sectionsWrapper.appendChild(sectionDiv);
+            });
+        }
+
+        function checkPlaceholder(el) {
+            const text = el.innerText.trim();
+            if (!text && el.innerHTML.indexOf('<img') === -1 && el.innerHTML.indexOf('<div') === -1) {
+                el.classList.add('empty');
+            } else {
+                el.classList.remove('empty');
+            }
+        }
+
+        let saveTimeout;
+        const save = () => {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                localStorage.setItem('noted-sections', JSON.stringify(sections));
+                updateTOC();
+            }, 300);
+        };
+
+        function updateTOC() {
+            tocContainer.innerHTML = '';
+            sections.forEach(s => {
+                if (s.title.trim()) {
+                    const item = createTOCItem(s.title, 'h1', () => {
+                        document.getElementById(`section-${s.id}`).scrollIntoView({behavior: 'smooth'});
+                    });
+                    tocContainer.appendChild(item);
+                }
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = s.body;
+                const subheadings = tempDiv.querySelectorAll('h1, h2, h3');
+                subheadings.forEach(sh => {
+                    const text = sh.innerText.trim();
+                    if (text) {
+                        const level = sh.tagName.toLowerCase();
+                        const subItem = createTOCItem(text, level, () => {
+                             document.getElementById(`section-${s.id}`).scrollIntoView({behavior: 'smooth'});
+                        });
+                        tocContainer.appendChild(subItem);
+                    }
+                });
+            });
+        }
+
+        function createTOCItem(text, level, onClick) {
+            const div = document.createElement('div');
+            div.className = `sidebar-item ${level}`;
+            div.innerText = text;
+            div.onclick = onClick;
+            return div;
+        }
+
+        document.addEventListener('selectionchange', () => {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0 && !selection.isCollapsed && isInsideEditor(selection.anchorNode)) {
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+                if (rect.width > 0) {
+                    toolbar.style.display = 'flex';
+                    toolbar.style.top = `${rect.top + window.scrollY - 48}px`;
+                    toolbar.style.left = `${rect.left + window.scrollX + (rect.width / 2)}px`;
+                    toolbar.style.transform = 'translateX(-50%)';
+                }
+            } else {
+                toolbar.style.display = 'none';
+            }
+        });
+
+        function isInsideEditor(node) {
+            let curr = node;
+            while (curr) {
+                if (curr.classList && (curr.classList.contains('section-body') || curr.classList.contains('section-title') || curr.classList.contains('section-subtitle'))) return true;
+                curr = curr.parentNode;
+            }
+            return false;
+        }
+
+        function format(command) {
+            const selection = window.getSelection();
+            const isRange = selection.rangeCount > 0 && !selection.isCollapsed;
+            
+            document.execCommand(command, false, null);
+            
+            // If it was a range selection, we want to "turn off" the style 
+            // for subsequent typing to meet the user's request.
+            if (isRange && (command === 'bold' || command === 'italic' || command === 'underline' || command === 'strikethrough')) {
+                // Collapse to end and turn off command
+                selection.collapseToEnd();
+                document.execCommand(command, false, null);
+            }
+            save();
+        }
+
+        function toggleHeading(tag) {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const parent = selection.anchorNode.parentElement;
+                const existingHeading = parent.closest('h1, h2, h3');
+                if (existingHeading && existingHeading.tagName.toLowerCase() === tag) {
+                    document.execCommand('formatBlock', false, 'p');
+                } else {
+                    document.execCommand('formatBlock', false, tag);
+                }
+                save();
+            }
+        }
+
+        function insertChecklist() {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+            
+            const parent = selection.anchorNode.parentElement;
+            if (parent.closest('.checklist-item')) return;
+
+            let selectedText = selection.toString().trim();
+            const id = 'check-' + Date.now();
+            const placeholder = selectedText || 'Task';
+            
+            const html = `<div class="checklist-item" contenteditable="false">
+                <input type="checkbox" onchange="this.parentElement.classList.toggle('checked', this.checked)"> 
+                <span contenteditable="true" style="outline:none; flex:1;" id="${id}">${placeholder}</span>
+            </div>${selectedText ? '' : '<p></p>'}`;
+            
+            document.execCommand('insertHTML', false, html);
+            
+            if (!selectedText) {
+                setTimeout(() => {
+                    const newSpan = document.getElementById(id);
+                    if (newSpan) {
+                        newSpan.focus();
+                        const range = document.createRange();
+                        range.selectNodeContents(newSpan);
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }, 10);
+            }
+            save();
+        }
+
+        function showAddMenu(e) {
+            const rect = e.target.getBoundingClientRect();
+            actionMenu.style.display = 'flex';
+            // Position menu BELOW the button as requested
+            actionMenu.style.top = `${rect.bottom + 8}px`;
+            actionMenu.style.left = `${rect.left - 40}px`;
+            
+            const closeMenu = () => {
+                actionMenu.style.display = 'none';
+                document.removeEventListener('click', closeMenu);
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu), 0);
+        }
+
+        function addNewSection(pos) {
+            const newSec = { id: Date.now(), title: '', subtitle: '', body: '' };
+            if (pos === 'top') {
+                sections.unshift(newSec);
+                renderSections();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                sections.push(newSec);
+                renderSections();
+                setTimeout(() => {
+                    const el = document.getElementById(`section-${newSec.id}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+            }
+            save();
+            setTimeout(() => {
+                const el = document.getElementById(`section-${newSec.id}`);
+                if (el) el.querySelector('.section-title').focus();
+            }, 150);
+        }
+
+        function deleteSection(id) {
+            if (sections.length <= 1) {
+                // Keep at least one section
+                sections[0].title = '';
+                sections[0].subtitle = '';
+                sections[0].body = '';
+                renderSections();
+                save();
+                return;
+            }
+            sections = sections.filter(s => s.id !== id);
+            renderSections();
+            save();
+        }
+
+        function clearAllData() {
+            if (confirm('모든 내용을 삭제하시겠습니까?')) {
+                sections = [{ id: Date.now(), title: '', subtitle: '', body: '' }];
+                localStorage.removeItem('noted-sections');
+                renderSections();
+                updateTOC();
+            }
+        }
+    </script>
+</body>
+</html>
